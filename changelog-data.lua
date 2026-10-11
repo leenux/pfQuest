@@ -1,5 +1,10 @@
 -- Published history and explicitly labeled development notes.
 pfQuestChangelog:Register("pfQuest", {
+{ ["version"] = "8.0.49", ["date"] = "2026-10-10", ["notes"] = {
+"Map and minimap appearance settings now refresh existing markers when Save & Close is pressed, including tracking pictures, cut-out circles and spawn colors.",
+"Tracker font, opacity, level labels and default objective expansion apply immediately while preserving manually folded quests.",
+"Minimum item drop chance changes refresh active quest markers; legacy quest-link enhancement respects its setting."
+} },
 { ["version"] = "8.0.48", ["date"] = "2026-10-08", ["notes"] = {
 "Restored background zone-map pin preparation in small batches, reducing visible redraw on opening.",
 "Fixed tracker Ctrl-click color changes not repainting map and minimap pins."

@@ -1,5 +1,11 @@
 # pfQuest base patch notes
 
+## 8.0.49 — 2026-10-10
+
+- Map and minimap appearance settings now refresh existing markers when Save & Close is pressed, including tracking pictures, cut-out circles and spawn colors.
+- Tracker font, opacity, level labels and default objective expansion apply immediately while preserving manually folded quests.
+- Minimum item drop chance changes refresh active quest markers; legacy quest-link enhancement respects its setting.
+
 ## 8.0.48 — 2026-10-08
 
 - Restored background zone-map pin preparation in small batches, reducing visible redraw on opening.
