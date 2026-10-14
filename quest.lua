@@ -446,6 +446,10 @@ pfQuest:SetScript("OnUpdate", function()
       end
     end
 
+    if pfDatabase:QuestChangesBreadcrumbAvailability(entry[2]) then
+      this.needsQuestGiverUpdate = true
+    end
+
     -- remove entry from queue and decrement counter
     pfQuest.queue[id] = nil
     pfQuest.queueCount = pfQuest.queueCount - 1

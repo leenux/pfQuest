@@ -1,5 +1,10 @@
 # pfQuest base patch notes
 
+## 8.0.50 — 2026-10-14
+
+- Corrected the optional Feralas introduction: A Threat in Feralas is hidden while The Ogres of Feralas is active or completed, without blocking the main quest.
+- Excluded obsolete Q6221 from available quest offers while retaining its lookup/history data.
+
 ## 8.0.49 — 2026-10-10
 
 - Map and minimap appearance settings now refresh existing markers when Save & Close is pressed, including tracking pictures, cut-out circles and spawn colors.

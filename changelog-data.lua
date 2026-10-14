@@ -1,5 +1,9 @@
 -- Published history and explicitly labeled development notes.
 pfQuestChangelog:Register("pfQuest", {
+{ ["version"] = "8.0.50", ["date"] = "2026-10-14", ["notes"] = {
+"Corrected the optional Feralas introduction: A Threat in Feralas is hidden while The Ogres of Feralas is active or completed, without blocking the main quest.",
+"Excluded obsolete Q6221 from available quest offers while retaining its lookup/history data."
+} },
 { ["version"] = "8.0.49", ["date"] = "2026-10-10", ["notes"] = {
 "Map and minimap appearance settings now refresh existing markers when Save & Close is pressed, including tracking pictures, cut-out circles and spawn colors.",
 "Tracker font, opacity, level labels and default objective expansion apply immediately while preserving manually folded quests.",
