@@ -1,5 +1,8 @@
 -- Published history and explicitly labeled development notes.
 pfQuestChangelog:Register("pfQuest", {
+{ ["version"] = "8.0.51", ["date"] = "2026-10-18", ["notes"] = {
+"Fixed quest marker errors for summoned creatures whose spawn records have no respawn timer."
+} },
 { ["version"] = "8.0.50", ["date"] = "2026-10-14", ["notes"] = {
 "Corrected the optional Feralas introduction: A Threat in Feralas is hidden while The Ogres of Feralas is active or completed, without blocking the main quest.",
 "Excluded obsolete Q6221 from available quest offers while retaining its lookup/history data."
