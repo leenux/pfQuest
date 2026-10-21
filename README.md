@@ -20,7 +20,7 @@ On Vanilla clients, WoW will show a warning if an addon exceeds the default memo
 
 ### World of Warcraft: Vanilla
 
-1. **[Download pfQuest (full)](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-full.zip)**
+1. **[Download pfQuest (full)](https://github.com/leenux/pfQuest)**
 2. Unpack the zip file
 3. Move the `pfQuest` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
@@ -29,7 +29,7 @@ Slim packages: [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/l
 
 ### World of Warcraft: The Burning Crusade
 
-1. **[Download pfQuest (full)](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-full-tbc.zip)**
+1. **[Download pfQuest (full)](https://github.com/leenux/pfQuest)**
 2. Unpack the zip file
 3. Move the `pfQuest-tbc` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
@@ -45,7 +45,7 @@ Slim packages: [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/l
 > It is able to run on a WotLK (3.3.5a) client, but does not yet ship a WotLK database.
 > All available content is limited to Vanilla & TBC as of now.
 
-1. **[Download pfQuest (full)](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-full-wotlk.zip)**
+1. **[Download pfQuest (full)](https://github.com/leenux/pfQuest)**
 2. Unpack the zip file
 3. Move the `pfQuest-wotlk` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
