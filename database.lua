@@ -28,8 +28,9 @@ pfDatabase = { icons = {} }
 
 local loc = GetLocale()
 local dbs =
-  { "items", "quests", "quests-itemreq", "objects", "units", "zones", "professions", "areatrigger", "refloot" }
-local noloc = { items = true, quests = true, objects = true, units = true }
+  { "items", "quests", "quests-itemreq", "objects", "units", "zones", "professions", "areatrigger", "refloot", "objtext" }
+-- objtext 的键要和客户端吐出来的字对齐，所以和 items/quests 一样跟着客户端语言走
+local noloc = { items = true, quests = true, objects = true, units = true, objtext = true }
 
 pfDB.locales = {
   ["enUS"] = "English",
@@ -344,7 +345,7 @@ pfDatabase.itemlist:SetScript("OnUpdate", function()
     for slot = 1, GetContainerNumSlots(bag) do
       local link = GetContainerItemLink(bag, slot)
       local _, _, parse = strfind((link or ""), "(%d+):")
-      if parse then
+      if parse and not (pfQuest and pfQuest.TurtleUnsafeItem and pfQuest:TurtleUnsafeItem(parse)) then
         local item = GetItemInfo(parse)
         if item then
           this.db[item] = true
@@ -644,9 +645,194 @@ function pfDatabase:IsFriendly(id)
   return false
 end
 
+-- 拆出目标行尾部的「当前/需求」计数。中文客户端的冒号是全角，先归一成半角。
+function pfDatabase:ParseObjectiveCounter(text)
+  local _, _, prefix, num, needed =
+    strfind(string.gsub(text or "", "\239\188\154", ":"), "(.*):%s*(%d+)%s*/%s*(%d+)")
+  return prefix, num, needed
+end
+
+-- objtext 的一个槽位可以写一个 id，也可以写成一列。
+function pfDatabase:ObjtextTargets(override, slot)
+  local targets = override and override[slot]
+  if tonumber(targets) then
+    return { tonumber(targets) }
+  end
+  return targets
+end
+
+-- 对话类目标没有客户端格式串。只认「听」「询问」紧跟名字，以及「与」名字「交谈」。
+function pfDatabase:ParseTalkObjective(text, name)
+  local prefix, num, needed = pfDatabase:ParseObjectiveCounter(text)
+  if not prefix or not name then
+    return
+  end
+
+  if strfind(prefix, "听" .. name, 1, true)
+    or strfind(prefix, "询问" .. name, 1, true)
+    or strfind(prefix, "与" .. name .. "交谈", 1, true)
+  then
+    return prefix, num, needed
+  end
+end
+
+-- 召唤源那句话的唯一出处。hint 是语言表的键，缺译文时回落成键本身。
+function pfDatabase:SummonHint(meta)
+  local src = meta and meta["summonsrc"]
+  if not src then
+    return nil
+  end
+
+  local function teal(v)
+    return "|cff33ffcc" .. v .. "|r"
+  end
+
+  if src.hint then
+    local text = pfQuest_Loc[src.hint]
+    if src.name then
+      text = string.gsub(text, "%$source", function() return teal(src.name) end)
+    end
+    if src.item then
+      text = string.gsub(text, "%$item", function() return teal(src.item) end)
+    end
+    if meta["spawn"] then
+      text = string.gsub(text, "%$target", function() return teal(meta["spawn"]) end)
+    end
+    return text
+  end
+
+  if not src.name then
+    return nil
+  end
+
+  if src.item then
+    return string.format(pfQuest_Loc["On |cff33ffcc%s|r use |cff33ffcc%s|r"], src.name, src.item)
+  elseif src.kind == "U" then
+    return string.format(pfQuest_Loc["Talk to |cff33ffcc%s|r"], src.name)
+  else
+    return string.format(pfQuest_Loc["Use |cff33ffcc%s|r"], src.name)
+  end
+end
+
+-- 被召唤出来的单位没有刷点。summon 声明来源，解析成与 coords 同构的落点。
+-- 第 5 位是源 id，供每个落点认领自己的召唤源。
+function pfDatabase:GetSummonCoords(summon)
+  if not summon then
+    return nil
+  end
+
+  local item = summon["I"] and pfDB.items.loc[summon["I"]] or nil
+
+  for _, kind in ipairs({ "O", "U" }) do
+    local decl = summon[kind]
+    if decl then
+      local list = type(decl) == "table" and decl or { decl }
+      local coords, byid, first = {}, {}, nil
+
+      for _, id in ipairs(list) do
+        local entry = kind == "O" and objects[id] or units[id]
+        if entry and entry["coords"] and not isempty(entry["coords"]) then
+          byid[id] = {
+            id = id,
+            kind = kind,
+            item = item,
+            hint = summon["hint"],
+            name = kind == "O" and pfDB.objects.loc[id] or pfDB.units.loc[id],
+            lvl = kind == "U" and entry["lvl"] or nil,
+          }
+          first = first or byid[id]
+          for _, c in pairs(entry["coords"]) do
+            insert(coords, { c[1], c[2], c[3], c[4], id })
+          end
+        end
+      end
+
+      if first then
+        return coords, {
+          id = first.id,
+          kind = kind,
+          name = first.name,
+          lvl = first.lvl,
+          item = item,
+          hint = summon["hint"],
+          byid = byid,
+        }
+      end
+    end
+  end
+
+  return nil
+end
+
+-- 没有坐标也没有召唤落点的目标画不了图钉，但鼠标指到实体时仍要能看到任务。
+local unpinned_skip = { "dummy", "trigger", "triger", "credit marker", "^quest[%s_]" }
+
+local function IsUnpinnedSkipName(name)
+  if not name then
+    return nil
+  end
+  local lower = strlower(name)
+  for _, pat in pairs(unpinned_skip) do
+    if strfind(lower, pat) then
+      return true
+    end
+  end
+  return nil
+end
+
+local function RegisterUnpinnedTooltip(kind, id, meta)
+  if not meta or meta["texture"] then
+    return
+  end
+  if not meta["quest"] and not meta["item"] then
+    return
+  end
+
+  local name = kind == "U" and pfDB.units.loc[id] or pfDB.objects.loc[id]
+  if not name then
+    return
+  end
+
+  local enus
+  if kind == "U" then
+    enus = pfDB.units.enUS and pfDB.units.enUS[id]
+  else
+    enus = pfDB.objects.enUS and pfDB.objects.enUS[id]
+  end
+  if IsUnpinnedSkipName(name) or IsUnpinnedSkipName(enus) then
+    return
+  end
+
+  meta["spawn"] = name
+  meta["spawnid"] = id
+  meta["spawnalias"] = nil
+  meta["summonsrc"] = nil
+  meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
+  meta["zone"], meta["x"], meta["y"] = nil, nil, nil
+  meta["respawn"] = nil
+
+  if kind == "U" then
+    meta["level"] = units[id]["lvl"] or UNKNOWN
+    meta["spawntype"] = pfQuest_Loc["Unit"]
+  else
+    local skill, caption = pfDatabase:SearchObjectSkill(id)
+    meta["level"] = skill and string.format("%s [%s]", skill, caption) or nil
+    meta["spawntype"] = pfQuest_Loc["Object"]
+  end
+
+  if pfMap and pfMap.AddTooltipEntry then
+    pfMap:AddTooltipEntry(meta)
+  end
+end
+
 function pfDatabase:BuildQuestDescription(meta)
   if not meta.title or not meta.quest or not meta.QTYPE then
     return meta.description
+  end
+
+  local summonhint = pfDatabase:SummonHint(meta)
+  if summonhint then
+    return summonhint
   end
 
   if meta.QTYPE == "NPC_START" then
@@ -673,6 +859,8 @@ function pfDatabase:BuildQuestDescription(meta)
       (meta.spawn or UNKNOWN),
       (meta.quest or UNKNOWN)
     )
+  elseif meta.QTYPE == "TALK_OBJECTIVE" then
+    return string.format(pfQuest_Loc["Talk to |cff33ffcc%s|r"], (meta.spawn or UNKNOWN))
   elseif meta.QTYPE == "UNIT_OBJECTIVE" then
     local talk = pfDB.quests.talkObjectives and pfDB.quests.talkObjectives[meta.questid]
     if talk and talk[meta.spawnid] then
@@ -1029,6 +1217,8 @@ function pfDatabase:SearchAreaTriggerID(id, meta, maps, prio)
       meta = meta or {}
       meta["spawn"] = pfQuest_Loc["Exploration Mark"]
       meta["spawnid"] = id
+      meta["spawnalias"] = nil
+      meta["summonsrc"] = nil
       meta["item"] = nil
 
       meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
@@ -1052,33 +1242,51 @@ end
 -- Scans for all mobs with a specified ID
 -- Adds map nodes for each and returns its map table
 function pfDatabase:SearchMobID(id, meta, maps, prio)
-  if not units[id] or not units[id]["coords"] then
+  if not units[id] then
     return maps
+  end
+
+  -- 没有刷点的单位按 summon 借召唤源的坐标。coords 为空表时也走这条。
+  local coords, summonsrc = units[id]["coords"], nil
+  if units[id]["summon"] and (not coords or isempty(coords)) then
+    coords, summonsrc = pfDatabase:GetSummonCoords(units[id]["summon"])
+  end
+  if not coords or isempty(coords) then
+    RegisterUnpinnedTooltip("U", id, meta)
+    return maps or {}
   end
 
   local maps = maps or {}
   local prio = prio or 1
   meta = meta or {}
 
-  -- hoist invariant fields outside the coord loop; these are the same for
-  -- every spawn point of this mob so there is no need to set them per-coord
   meta["spawn"] = pfDB.units.loc[id]
   meta["spawnid"] = id
   meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
   meta["level"] = units[id]["lvl"] or UNKNOWN
   meta["spawntype"] = pfQuest_Loc["Unit"]
-  -- description only depends on the above invariant fields + QTYPE/quest/item
-  -- compute once here; AddNode will skip its own BuildQuestDescription call
-  meta["description"] = pfDatabase:BuildQuestDescription(meta)
+  if not summonsrc then
+    meta["spawnalias"] = nil
+    meta["summonsrc"] = nil
+    meta["description"] = pfDatabase:BuildQuestDescription(meta)
+  end
 
-  for _, data in pairs(units[id]["coords"]) do
-    local x, y, zone, respawn = unpack(data)
+  for _, data in pairs(coords) do
+    local x, y, zone, respawn, srcid = unpack(data)
+    local nodesrc = summonsrc
+    if srcid and summonsrc and summonsrc.byid and summonsrc.byid[srcid] then
+      nodesrc = summonsrc.byid[srcid]
+    end
 
     if zone > 0 then
+      if nodesrc then
+        meta["spawnalias"] = nodesrc.name
+        meta["summonsrc"] = nodesrc
+        meta["description"] = pfDatabase:BuildQuestDescription(meta)
+      end
       meta["zone"] = zone
       meta["x"] = x
       meta["y"] = y
-      -- Summoned creatures can have a location without a respawn timer.
       meta["respawn"] = respawn and respawn > 0 and SecondsToTime(respawn) or pfQuest_Loc["N/A"]
 
       maps[zone] = maps[zone] and maps[zone] + prio or prio
@@ -1240,7 +1448,7 @@ function pfDatabase:SearchMob(mob, meta, partial)
   local maps = {}
 
   for id in pairs(pfDatabase:GetIDByName(mob, "units", partial)) do
-    if units[id] and units[id]["coords"] then
+    if units[id] then
       maps = pfDatabase:SearchMobID(id, meta, maps)
     end
   end
@@ -1267,6 +1475,8 @@ function pfDatabase:SearchZoneID(id, meta, maps, prio)
     meta = meta or {}
     meta["spawn"] = pfDB.zones.loc[id] or UNKNOWN
     meta["spawnid"] = id
+    meta["spawnalias"] = nil
+    meta["summonsrc"] = nil
 
     meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
     meta["zone"] = zone
@@ -1318,14 +1528,21 @@ end
 -- Scans for all objects with a specified ID
 -- Adds map nodes for each and returns its map table
 function pfDatabase:SearchObjectID(id, meta, maps, prio)
-  if not objects[id] or not objects[id]["coords"] then
+  if not objects[id] then
     return maps
+  end
+
+  meta = meta or {}
+  meta["spawnalias"] = nil
+  meta["summonsrc"] = nil
+  if not objects[id]["coords"] or isempty(objects[id]["coords"]) then
+    RegisterUnpinnedTooltip("O", id, meta)
+    return maps or {}
   end
 
   local skill, caption = pfDatabase:SearchObjectSkill(id)
   local maps = maps or {}
   local prio = prio or 1
-  meta = meta or {}
 
   -- hoist invariant fields outside the coord loop
   meta["spawn"] = pfDB.objects.loc[id]
@@ -1360,7 +1577,7 @@ function pfDatabase:SearchObject(obj, meta, partial)
   local maps = {}
 
   for id in pairs(pfDatabase:GetIDByName(obj, "objects", partial)) do
-    if objects[id] and objects[id]["coords"] then
+    if objects[id] then
       maps = pfDatabase:SearchObjectID(id, meta, maps)
     end
   end
@@ -1581,41 +1798,95 @@ function pfDatabase:SearchQuestID(id, meta, maps)
   -- Clear and reuse the module-level parse_obj table
   clear_parse_obj()
 
-  -- If QuestLogID is given, scan and add all finished objectives to blacklist
+  -- If QuestLogID is given, scan and add all finished objectives to blacklist.
+  -- 完成位先看标题，避免对会崩溃的任务去读目标行。
   if meta["qlogid"] then
-    local objectives = GetNumQuestLeaderBoards(meta["qlogid"])
     local _, _, _, _, _, complete = compat.GetQuestLogTitle(meta["qlogid"])
     if complete then
       return maps
     end
 
+    local unsafe = pfQuest and pfQuest.TurtleUnsafeQuest and pfQuest:TurtleUnsafeQuest(id, meta["quest"])
+    local objectives = not unsafe and GetNumQuestLeaderBoards(meta["qlogid"])
     if objectives then
+      local orphan, orphans = nil, 0
+      local objtext = pfDB["objtext"] and pfDB["objtext"]["loc"] and pfDB["objtext"]["loc"][id]
+
       for i = 1, objectives, 1 do
         local text, type, done = GetQuestLogLeaderBoard(i, meta["qlogid"])
+        local prefix, num, needed = pfDatabase:ParseObjectiveCounter(text)
+        local override = prefix and objtext and objtext[prefix]
 
         local talk = pfDB.quests.talkObjectives and pfDB.quests.talkObjectives[id]
         for unitID, row in pairs(talk or {}) do
-          if row == i then parse_obj.U[unitID] = done and "DONE" or "PROG" end
-        end
-
-        -- spawn data
-        if type == "monster" then
-          local i, j, monsterName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
-          for id in pairs(pfDatabase:GetIDByName(monsterName, "units")) do
-            parse_obj["U"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
-          end
-
-          for id in pairs(pfDatabase:GetIDByName(monsterName, "objects")) do
-            parse_obj["O"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+          if row == i then
+            parse_obj.U[unitID] = done and "DONE" or "PROG"
           end
         end
 
-        -- item data
-        if type == "item" then
-          local i, j, itemName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
-          for id in pairs(pfDatabase:GetIDByName(itemName, "items")) do
-            parse_obj["I"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+        if override then
+          local state = (done or (num and num + 0 >= needed + 0)) and "DONE" or "PROG"
+          for _, slot in pairs({ "U", "O", "I" }) do
+            local targets = pfDatabase:ObjtextTargets(override, slot)
+            if targets then
+              for _, target in pairs(targets) do
+                parse_obj[slot][target] = state
+              end
+            end
           end
+        end
+
+        if not override and type == "monster" then
+          local _, _, monsterName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+          local named
+
+          if not monsterName and quests[id]["obj"] then
+            for _, class in pairs({ "T", "U" }) do
+              if quests[id]["obj"][class] then
+                for _, target in pairs(quests[id]["obj"][class]) do
+                  local db = target > 0 and "units" or "objects"
+                  local _, talkNum, talkNeeded =
+                    pfDatabase:ParseTalkObjective(text, pfDB[db]["loc"][math.abs(target)])
+                  if talkNum then
+                    named = true
+                    local slot = target > 0 and "U" or "O"
+                    parse_obj[slot][math.abs(target)] =
+                      (talkNum + 0 >= talkNeeded + 0 or done) and "DONE" or "PROG"
+                  end
+                end
+              end
+            end
+            if not named then
+              orphan, orphans = { text = text, done = done }, orphans + 1
+            end
+          end
+
+          for mid in pairs(pfDatabase:GetIDByName(monsterName, "units")) do
+            parse_obj["U"][mid] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+          end
+
+          for mid in pairs(pfDatabase:GetIDByName(monsterName, "objects")) do
+            parse_obj["O"][mid] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+          end
+        end
+
+        if not override and type == "item" then
+          local _, _, itemName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
+          for mid in pairs(pfDatabase:GetIDByName(itemName, "items")) do
+            parse_obj["I"][mid] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+          end
+        end
+      end
+
+      -- 只剩一行没归属、且只有一个对话目标时，这行只能是它。
+      local talk = quests[id]["obj"] and quests[id]["obj"]["T"]
+      if orphans == 1 and talk and table.getn(talk) == 1 then
+        local target = talk[1]
+        local slot, key = (target > 0 and "U" or "O"), math.abs(target)
+        if not parse_obj[slot][key] then
+          local _, num, needed = pfDatabase:ParseObjectiveCounter(orphan.text)
+          local finished = orphan.done or (num and num + 0 >= needed + 0)
+          parse_obj[slot][key] = finished and "DONE" or "PROG"
         end
       end
     end
@@ -1664,6 +1935,32 @@ function pfDatabase:SearchQuestID(id, meta, maps)
                 maps = pfDatabase:SearchMobID(math.abs(object), meta, maps)
               end
             end
+          end
+        end
+      end
+    end
+
+    -- 正数是单位，负数是物体。登记进 skip 后，同一 id 再出现在 U/O 里不会画第二遍。
+    if quests[id]["obj"]["T"] then
+      for _, target in pairs(quests[id]["obj"]["T"]) do
+        meta["texture"] = nil
+        meta["QTYPE"] = "TALK_OBJECTIVE"
+
+        if target > 0 then
+          local drawn = skip_creatures and skip_creatures[target]
+          skip_creatures = skip_creatures or {}
+          skip_creatures[target] = true
+          if not drawn and parse_obj["U"][target] ~= "DONE" then
+            maps = pfDatabase:SearchMobID(target, meta, maps)
+          end
+        elseif target < 0 then
+          local object = math.abs(target)
+          local drawn = skip_objects and skip_objects[object]
+          skip_objects = skip_objects or {}
+          skip_objects[object] = true
+          if not drawn and parse_obj["O"][object] ~= "DONE" then
+            meta["layer"] = 2
+            maps = pfDatabase:SearchObjectID(object, meta, maps)
           end
         end
       end
@@ -1750,8 +2047,16 @@ function pfDatabase:SearchQuestID(id, meta, maps)
           meta["zone"] = map
 
           local icon = pfQuest_config["clustermono"] == "1" and "_mono" or ""
+          local kindtex = meta.QTYPE == "TALK_OBJECTIVE" and "cluster_talk"
+            or meta.QTYPE == "AREATRIGGER_OBJECTIVE" and "cluster_explore"
+            or nil
 
-          if meta.item then
+          if kindtex then
+            meta["x"], meta["y"], meta["priority"] = getcluster(data.coords, meta["quest"] .. hash .. map)
+            meta["texture"] = pfQuestConfig.path .. "\\img\\" .. kindtex .. icon
+            meta["description"] = nil
+            pfMap:AddNode(meta, true)
+          elseif meta.item then
             meta["x"], meta["y"], meta["priority"] = getcluster(data.coords, meta["quest"] .. hash .. map)
             meta["texture"] = pfQuestConfig.path .. "\\img\\cluster_item" .. icon
             pfMap:AddNode(meta, true)
@@ -2191,6 +2496,14 @@ function pfDatabase:GetQuestIDs(qid, preserveQuestLogSelection)
   local title, level, _, header = compat.GetQuestLogTitle(qid)
   if header or not title then
     return
+  end
+
+  -- 这些任务的正文接口会让 1.12 客户端崩溃，标题已经能对上数据库 id。
+  if pfQuest and pfQuest.TurtleSafeQuestID then
+    local safeid = pfQuest:TurtleSafeQuestID(nil, title)
+    if safeid then
+      return { [1] = safeid }
+    end
   end
 
   -- Some enhanced 1.12 clients expose GetQuestLinkForLogIndex instead of

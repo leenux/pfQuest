@@ -107,7 +107,11 @@ local layers = {
   [addon_path .. "\\img\\cluster_item"] = 9,
   [addon_path .. "\\img\\cluster_mob"] = 9,
   [addon_path .. "\\img\\cluster_misc"] = 9,
+  [addon_path .. "\\img\\cluster_talk"] = 9,
+  [addon_path .. "\\img\\cluster_explore"] = 9,
   [addon_path .. "\\img\\cluster_mob_mono"] = 9,
+  [addon_path .. "\\img\\cluster_talk_mono"] = 9,
+  [addon_path .. "\\img\\cluster_explore_mono"] = 9,
   [addon_path .. "\\img\\cluster_item_mono"] = 9,
   [addon_path .. "\\img\\cluster_misc_mono"] = 9,
 }
@@ -266,6 +270,37 @@ pfMap.minimap_indoor = minimap_indoor
 pfMap.minimap_zoom = minimap_zoom
 pfMap.minimap_sizes = minimap_sizes
 
+-- 没有坐标的目标只登记提示，不建图钉。当前地图没有同名节点时回退到 "*".
+function pfMap:AddTooltipEntry(meta)
+  if not meta or not meta["title"] or not meta["spawn"] then
+    return
+  end
+
+  local name, title = meta["spawn"], meta["title"]
+  pfMap.tooltips[name] = pfMap.tooltips[name] or {}
+  pfMap.tooltips[name][title] = pfMap.tooltips[name][title] or {}
+
+  local held = pfMap.tooltips[name][title]["*"]
+  if held and held.spawnid == meta["spawnid"] then
+    if meta["item"] then
+      for _, have in pairs(held.item) do
+        if have == meta["item"] then
+          return
+        end
+      end
+      insert(held.item, meta["item"])
+    end
+    return
+  end
+
+  local node = {}
+  for k, v in pairs(meta) do
+    node[k] = v
+  end
+  node.item = { [1] = meta["item"] }
+  pfMap.tooltips[name][title]["*"] = node
+end
+
 pfMap.tooltip = CreateFrame("Frame", "pfMapTooltip", GameTooltip)
 pfMap.tooltip:SetScript("OnShow", function()
   local focus = GetMouseFocus()
@@ -289,6 +324,8 @@ pfMap.tooltip:SetScript("OnShow", function()
   name = string.gsub(name, "|c%x%x%x%x%x%x%x%x", "")
   name = string.gsub(name, "|r", "")
 
+  local isunit = UnitExists("mouseover") and 1 or nil
+
   if pfMap.tooltips[name] and pfMap.tooltips[name] then
     for title, obj in pairs(pfMap.tooltips[name]) do
       -- PFPARTY registers here too (it sets meta.spawn so its own map-pin
@@ -296,8 +333,18 @@ pfMap.tooltip:SetScript("OnShow", function()
       -- richer world-unit tooltip addition (HookGameTooltip in
       -- pfQuest-partyprogress.lua, with per-player progress). Showing both
       -- duplicated the "[!] QuestName" block on the same creature's tooltip.
-      if obj[zone] and obj[zone].addon ~= "PFPARTY" then
-        pfMap:ShowTooltip(obj[zone], GameTooltip)
+      local node = obj[zone]
+      if node and node.addon == "PFPARTY" then
+        node = nil
+      end
+      if not node and pfQuest_config["tooltipnocoord"] ~= "0" then
+        node = obj["*"]
+        if node and node.addon == "PFPARTY" then
+          node = nil
+        end
+      end
+      if node then
+        pfMap:ShowTooltip(node, GameTooltip, name, isunit)
         GameTooltip:Show()
       end
     end
@@ -358,10 +405,51 @@ local function ObjectiveNameMatches(spawn, objective)
     or objective == spawn .. "es" or spawn == objective .. "es"
 end
 
-function pfMap:ShowTooltip(meta, tooltip)
+-- objtext 按编号认单位和物体，物品节点上只有名字。
+local function ObjtextHitsNode(override, meta)
+  local slot = meta["spawntype"] == pfQuest_Loc["Unit"] and "U"
+    or meta["spawntype"] == pfQuest_Loc["Object"] and "O"
+    or nil
+  local targets = slot and meta["spawnid"] and pfDatabase:ObjtextTargets(override, slot)
+  if targets then
+    for _, target in pairs(targets) do
+      if target == meta["spawnid"] then
+        return true
+      end
+    end
+  end
+  return nil
+end
+
+local function ObjtextHitsItem(override, item)
+  local targets = item and pfDatabase:ObjtextTargets(override, "I")
+  if targets then
+    for _, target in pairs(targets) do
+      if pfDB["items"]["loc"][target] == item then
+        return true
+      end
+    end
+  end
+  return nil
+end
+
+local function TooltipRank(node)
+  if not node then
+    return 99
+  end
+  if node["texture"] then
+    return 2
+  end
+  return node["spawnalias"] and 1 or 0
+end
+
+function pfMap:ShowTooltip(meta, tooltip, hovered, isunit)
   local catch = nil
   local catch_obj = nil
   local tooltip = tooltip or GameTooltip
+  local summonline = hovered and meta["spawnalias"] and meta["spawn"]
+    and (hovered ~= meta["spawn"] or (meta["spawnalias"] == meta["spawn"] and not isunit))
+  local summontext = summonline and pfDatabase:SummonHint(meta)
 
   -- add quest data
   if meta["quest"] then
@@ -371,49 +459,76 @@ function pfMap:ShowTooltip(meta, tooltip)
 
       if meta["quest"] == qtitle then
         -- handle active quests
-        local objectives = GetNumQuestLeaderBoards(qid)
+        local objectives = nil
         catch = true
+        if not (pfQuest and pfQuest.TurtleUnsafeQuest and pfQuest:TurtleUnsafeQuest(meta["questid"], meta["quest"])) then
+          objectives = GetNumQuestLeaderBoards(qid)
+        end
 
         local symbol = (complete or objectives == 0) and "|cff555555[|cffffcc00?|cff555555]|r "
           or "|cff555555[|cffffcc00!|cff555555]|r "
         tooltip:AddLine(symbol .. meta["quest"], 1, 1, 0)
+        if summonline and summontext then
+          tooltip:AddLine("|cffaaaaaa- |r" .. summontext, 0.7, 0.7, 0.7)
+        end
 
-        if objectives then
+        local objtext = pfDB["objtext"] and pfDB["objtext"]["loc"] and pfDB["objtext"]["loc"][meta["questid"]]
+        if objectives and not summonline then
           for i = 1, objectives, 1 do
             local text, type, finished = GetQuestLogLeaderBoard(i, qid)
+            local prefix, num, needed = pfDatabase:ParseObjectiveCounter(text)
+            local override = prefix and objtext and objtext[prefix]
 
             if type == "monster" then
               -- kill
-              local i, j, monsterName, objNum, objNeeded =
+              local _, _, monsterName, objNum, objNeeded =
                 strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
-              if monsterName and ObjectiveNameMatches(meta["spawn"], monsterName) then
+              local label
+              if override then
+                if ObjtextHitsNode(override, meta) then
+                  label, monsterName, objNum, objNeeded = prefix, meta["spawn"], num, needed
+                else
+                  monsterName = nil
+                end
+              elseif not monsterName then
+                local talkNum, talkNeeded
+                label, talkNum, talkNeeded = pfDatabase:ParseTalkObjective(text, meta["spawn"])
+                if label then
+                  monsterName, objNum, objNeeded = meta["spawn"], talkNum, talkNeeded
+                end
+              end
+              if monsterName and (monsterName == meta["spawn"] or ObjectiveNameMatches(meta["spawn"], monsterName)) then
                 catch_obj = true
                 local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
-                tooltip:AddLine("|cffaaaaaa- |r" .. monsterName .. ": " .. objNum .. "/" .. objNeeded, r, g, b)
+                tooltip:AddLine("|cffaaaaaa- |r" .. (label or monsterName) .. ": " .. objNum .. "/" .. objNeeded, r, g, b)
               end
             elseif meta["QTYPE"] == "OBJECT_OBJECTIVE" and (type == "object" or type == "item") then
               -- Direct object objectives use the same localized progress
               -- format as item objectives, but have no drop-rate item entry.
               local _, _, objectName, objNum, objNeeded =
                 strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
-              if objectName and meta["spawn"] == objectName then
+              if override and ObjtextHitsNode(override, meta) then
+                objectName, objNum, objNeeded = prefix, num, needed
+              end
+              if objectName and (meta["spawn"] == objectName or (override and ObjtextHitsNode(override, meta))) then
                 catch_obj = true
                 local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
-                tooltip:AddLine("|cffaaaaaa- |r" .. objectName .. ": " .. objNum .. "/" .. objNeeded, r, g, b)
+                tooltip:AddLine("|cffaaaaaa- |r" .. (override and prefix or objectName) .. ": " .. objNum .. "/" .. objNeeded, r, g, b)
               end
             elseif table.getn(meta["item"]) > 0 and type == "item" and meta["droprate"] then
               -- loot
               local i, j, itemName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
 
               for mid, item in pairs(meta["item"]) do
-                if item == itemName then
+                if item == itemName or ObjtextHitsItem(override, item) then
                   catch_obj = true
+                  objNum, objNeeded = objNum or num, objNeeded or needed
                   local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
                   local dr, dg, db = pfMap.tooltip:GetColor(tonumber(meta["droprate"]), 100)
                   local lootcolor = string.format("%02x%02x%02x", dr * 255, dg * 255, db * 255)
                   tooltip:AddLine(
                     "|cffaaaaaa- |r"
-                      .. itemName
+                      .. (override and prefix or itemName)
                       .. ": "
                       .. objNum
                       .. "/"
@@ -433,8 +548,9 @@ function pfMap:ShowTooltip(meta, tooltip)
               local i, j, itemName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
 
               for mid, item in pairs(meta["item"]) do
-                if item == itemName then
+                if item == itemName or ObjtextHitsItem(override, item) then
                   catch_obj = true
+                  objNum, objNeeded = objNum or num, objNeeded or needed
                   local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
                   local sellcount = tonumber(meta["sellcount"]) > 0
                       and " |cff555555[|cffcccccc" .. meta["sellcount"] .. "x" .. "|cff555555]"
@@ -443,7 +559,7 @@ function pfMap:ShowTooltip(meta, tooltip)
                     "|cffaaaaaa- |r"
                       .. pfQuest_Loc["Buy"]
                       .. ": "
-                      .. itemName
+                      .. (override and prefix or itemName)
                       .. ": "
                       .. objNum
                       .. "/"
@@ -463,9 +579,12 @@ function pfMap:ShowTooltip(meta, tooltip)
 
     if not catch then
       tooltip:AddLine("|cff555555[|cffffcc00!|cff555555]|r " .. meta["quest"], 1, 1, 0.7)
+      if summonline and summontext then
+        tooltip:AddLine("|cffaaaaaa- |r" .. summontext, 0.7, 0.7, 0.7)
+      end
     end
 
-    if not catch_obj then
+    if not catch_obj and not summonline then
       -- handle inactive quests
       local catchFallback = nil
 
@@ -522,7 +641,9 @@ function pfMap:ShowTooltip(meta, tooltip)
     end
   else
     -- handle non-quest objects
-    if meta["item"][1] and meta["itemid"] and not meta["itemlink"] then
+    if meta["item"][1] and meta["itemid"] and not meta["itemlink"]
+      and not (pfQuest and pfQuest.TurtleUnsafeItem and pfQuest:TurtleUnsafeItem(meta["itemid"]))
+    then
       local _, _, itemQuality = GetItemInfo(meta["itemid"])
       if itemQuality then
         local itemColor = "|c"
@@ -695,6 +816,7 @@ function pfMap:AddNode(meta)
   local title = meta["title"]
   local layer = GetLayerByTexture(meta["texture"])
   local spawn = meta["spawn"]
+  local alias = meta["spawnalias"]
   local item = meta["item"]
 
   local sindex = string.format(
@@ -723,9 +845,13 @@ function pfMap:AddNode(meta)
     pfMap.nodes[addon][map][coords] = {}
   end
 
+  -- 借坐标的召唤节点让位给本体节点，避免谁先建谁占住这个槽。
+  local occupied = pfMap.nodes[addon][map][coords][title]
+  local yield = occupied and occupied["spawnalias"] and not alias
+
   -- skip early on existing nodes
-  if pfMap.nodes[addon][map][coords][title] then
-    local existing = pfMap.nodes[addon][map][coords][title]
+  if occupied and not yield then
+    local existing = occupied
 
     -- Quest progress can change an ender from the incomplete grey question
     -- mark to the completed yellow question mark without changing its title,
@@ -861,17 +987,26 @@ function pfMap:AddNode(meta)
     table.insert(unifiedcache[title][map][node_index].coords, { x, y })
   end
 
-  -- add to gametooltips
-  if spawn and title then
-    pfMap.tooltips[spawn] = pfMap.tooltips[spawn] or {}
-    pfMap.tooltips[spawn][title] = pfMap.tooltips[spawn][title] or {}
-    pfMap.tooltips[spawn][title][map] = pfMap.tooltips[spawn][title][map] or similar_nodes[sindex]
-
-    -- maintain reverse tooltip index for O(1) DeleteNode
+  -- add to gametooltips。本体压过借坐标的召唤节点，任务目标压过感叹号。
+  local function rememberTooltip(name)
+    if not name or not title then
+      return
+    end
+    pfMap.tooltips[name] = pfMap.tooltips[name] or {}
+    pfMap.tooltips[name][title] = pfMap.tooltips[name][title] or {}
+    local held = pfMap.tooltips[name][title][map]
+    local node = similar_nodes[sindex]
+    if not held or TooltipRank(node) < TooltipRank(held) then
+      pfMap.tooltips[name][title][map] = node
+    end
     if not pfMap.tooltipIndex[title] then
       pfMap.tooltipIndex[title] = {}
     end
-    pfMap.tooltipIndex[title][spawn] = true
+    pfMap.tooltipIndex[title][name] = true
+  end
+  rememberTooltip(spawn)
+  if alias and alias ~= spawn then
+    rememberTooltip(alias)
   end
 
   pfMap.queue_update = GetTime()

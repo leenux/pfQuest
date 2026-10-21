@@ -66,7 +66,7 @@ local function ShowTooltip()
       end
 
       local qlogid = pfQuest.questlog[this.node.questid] and pfQuest.questlog[this.node.questid].qlogid
-      if qlogid then
+      if qlogid and not pfQuest:TurtleUnsafeQuest(this.node.questid, this.node.quest) then
         local objectives = GetNumQuestLeaderBoards(qlogid)
         if objectives and objectives > 0 then
           for i = 1, objectives, 1 do
@@ -625,7 +625,10 @@ function tracker.ButtonEvent(self)
     if not qlogid or not qtitle then
       return
     end
-    local objectives = GetNumQuestLeaderBoards(qlogid)
+    local objectives = nil
+    if not pfQuest:TurtleUnsafeQuest(qid, qtitle) then
+      objectives = GetNumQuestLeaderBoards(qlogid)
+    end
     -- A quest button can retain the node texture captured before the client
     -- reports its final state. Refresh the completion icon from the current
     -- quest log on every event; objective-free talk/report quests are ready

@@ -6,6 +6,7 @@ pfDB = {
   ["minimap"] = {},
   ["minimap-tbc"] = {},
   ["objects"] = {},
+  ["objtext"] = {},
   ["professions"] = {},
   ["quests"] = {},
   ["quests-itemreq"] = {},

@@ -77,6 +77,60 @@ function pfQuest:GetDatabaseURL()
   return url
 end
 
+local turtle_unsafe_quests = {
+  [42065] = true,
+  [42066] = true,
+  [42067] = true,
+  [42069] = true,
+  ["人头落地"] = true,
+  ["玛拉塞希尔的鬼魂"] = true,
+  ["天外陨星"] = true,
+  ["枯萎的洞穴"] = true,
+  ["Falling the Fallen"] = true,
+  ["Ghosts of Maras’ethil"] = true,
+  ["Heaven Falling Down"] = true,
+  ["The Withered Den"] = true,
+}
+
+local turtle_safe_quest_ids = {
+  [42065] = 42065,
+  [42066] = 42066,
+  [42067] = 42067,
+  [42069] = 42069,
+  ["人头落地"] = 42065,
+  ["玛拉塞希尔的鬼魂"] = 42066,
+  ["天外陨星"] = 42067,
+  ["枯萎的洞穴"] = 42069,
+  ["搜寻者的灭亡"] = 70033,
+  ["Falling the Fallen"] = 42065,
+  ["Ghosts of Maras’ethil"] = 42066,
+  ["Heaven Falling Down"] = 42067,
+  ["The Withered Den"] = 42069,
+  ["The Seeker's Demise"] = 70033,
+}
+
+local turtle_unsafe_items = {
+  [42351] = true,
+  [42352] = true,
+  [42353] = true,
+  [42354] = true,
+  [42355] = true,
+  [42356] = true,
+  [42357] = true,
+}
+
+function pfQuest:TurtleUnsafeQuest(id, title)
+  return turtle_unsafe_quests[id] or turtle_unsafe_quests[title]
+end
+
+function pfQuest:TurtleSafeQuestID(id, title)
+  return turtle_safe_quest_ids[title] or turtle_safe_quest_ids[id]
+end
+
+function pfQuest:TurtleUnsafeItem(id)
+  return turtle_unsafe_items[tonumber(id)]
+end
+
 function pfQuest:Debug(msg)
   -- only show debug output if enabled
   if not pfQuest_config.debug and pfQuest.debugwin then
@@ -483,10 +537,16 @@ function pfQuest:UpdateQuestlog()
   -- iterate over all quests
   for qlogid = 1, 40 do
     local title, _, _, header, _, complete = compat.GetQuestLogTitle(qlogid)
-    local objectives = GetNumQuestLeaderBoards(qlogid)
+    local objectives = nil
+    if title and not pfQuest:TurtleUnsafeQuest(nil, title) then
+      objectives = GetNumQuestLeaderBoards(qlogid)
+    end
     local watched, questid, state
 
     if title and not header then
+      if pfQuest:TurtleUnsafeQuest(nil, title) then
+        objectives = nil
+      end
       -- A legacy same-title lookup can select hidden quest rows. While the
       -- Quest Log is open, keep background refreshes read-only so collapsed
       -- categories remain collapsed through progress and completion updates.
@@ -1220,10 +1280,85 @@ local function UpdateQuestLevel(button, id)
   QuestLogTitleButton_Resize(button)
 end
 
+local function TurtleHandleQuestWatchClick(questIndex)
+  if not IsShiftKeyDown() or ChatFrameEditBox:IsVisible() then
+    return
+  end
+
+  if IsQuestWatched(questIndex) then
+    RemoveQuestWatch(questIndex)
+  else
+    AddQuestWatch(questIndex)
+  end
+
+  SelectQuestLogEntry(questIndex)
+  QuestLog_Update()
+  QuestLog_UpdateQuestDetails(true)
+  pfQuest.updateQuestLog = true
+  pfMap:UpdateNodes()
+  return true
+end
+
+local pfHookQuestLog_UpdateQuestDetails = QuestLog_UpdateQuestDetails
+QuestLog_UpdateQuestDetails = function(doNotScroll)
+  local questIndex = GetQuestLogSelection()
+  local title, _, _, header = compat.GetQuestLogTitle(questIndex)
+  local questid = title and pfQuest:TurtleSafeQuestID(nil, title)
+
+  if questid and title and not header then
+    local lang = pfQuest_config.translate
+    local data = lang and pfDB["quests"][lang] and pfDB["quests"][lang][questid]
+    if not data then
+      data = pfDB["quests"]["loc"] and pfDB["quests"]["loc"][questid]
+    end
+
+    if data then
+      local QuestLogQuestTitle = EQL3_QuestLogQuestTitle or pfQuestCompat.QuestLogQuestTitle
+      local QuestLogObjectivesText = EQL3_QuestLogObjectivesText or pfQuestCompat.QuestLogObjectivesText
+      local QuestLogQuestDescription = EQL3_QuestLogQuestDescription or pfQuestCompat.QuestLogQuestDescription
+      local QuestLogDetailScrollFrame = EQL3_QuestLogDetailScrollFrame or QuestLogDetailScrollFrame
+
+      QuestLogQuestTitle:SetText(pfDatabase:FormatQuestText(data["T"] or title))
+      QuestLogObjectivesText:SetText(pfDatabase:FormatQuestText(data["O"] or ""))
+      QuestLogQuestDescription:SetText(pfDatabase:FormatQuestText(data["D"] or ""))
+      if QuestLogDetailScrollFrame then
+        QuestLogDetailScrollFrame:UpdateScrollChildRect()
+      end
+      return
+    end
+  end
+
+  if pfHookQuestLog_UpdateQuestDetails then
+    pfHookQuestLog_UpdateQuestDetails(doNotScroll)
+  end
+end
+
+if QuestLogFrame and QuestLogFrame.GetScript and QuestLogFrame.SetScript then
+  local pfHookQuestLogFrame_OnShow = QuestLogFrame:GetScript("OnShow")
+  QuestLogFrame:SetScript("OnShow", function()
+    local questIndex = GetQuestLogSelection()
+    local title = compat.GetQuestLogTitle(questIndex)
+    if pfQuest:TurtleSafeQuestID(nil, title) then
+      QuestLog_Update()
+      QuestLog_UpdateQuestDetails(true)
+      return
+    end
+    if pfHookQuestLogFrame_OnShow then
+      pfHookQuestLogFrame_OnShow()
+    end
+  end)
+end
+
 -- Update quest id button
 local pfHookQuestLog_Update = QuestLog_Update
 QuestLog_Update = function()
-  pfHookQuestLog_Update()
+  local selected = GetQuestLogSelection()
+  local selectedTitle = compat.GetQuestLogTitle(selected)
+  if pfQuest:TurtleSafeQuestID(nil, selectedTitle) then
+    QuestLog_UpdateQuestDetails(true)
+  else
+    pfHookQuestLog_Update()
+  end
 
   if pfQuest_config["questloglevel"] == "1" then
     if client >= 30300 then
@@ -1280,6 +1415,18 @@ end
 -- refresh language and url on quest selection
 local pfHookQuestLogTitleButton_OnClick = QuestLogTitleButton_OnClick
 QuestLogTitleButton_OnClick = function(self, button)
+  local scrollFrame = EQL3_QuestLogListScrollFrame or ShaguQuest_QuestLogListScrollFrame or QuestLogListScrollFrame
+  local questIndex = this:GetID() + FauxScrollFrame_GetOffset(scrollFrame)
+  local questName = compat.GetQuestLogTitle(questIndex)
+  if pfQuest:TurtleSafeQuestID(nil, questName) then
+    if TurtleHandleQuestWatchClick(questIndex) then
+      return
+    end
+    SelectQuestLogEntry(questIndex)
+    QuestLog_Update()
+    QuestLog_UpdateQuestDetails(true)
+    return
+  end
   pfHookQuestLogTitleButton_OnClick(self, button)
   QuestLog_Update()
 end
