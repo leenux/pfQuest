@@ -25,7 +25,7 @@ On Vanilla clients, WoW will show a warning if an addon exceeds the default memo
 3. Move the `pfQuest` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
 
-Slim packages (single language): [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS.zip) · [German](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-deDE.zip) · [French](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-frFR.zip) · [Spanish](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-esES.zip) · [Korean](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-koKR.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN.zip) · [Russian](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-ruRU.zip)
+Slim packages: [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN.zip)
 
 ### World of Warcraft: The Burning Crusade
 
@@ -34,7 +34,7 @@ Slim packages (single language): [English](https://github.com/The-Kludge-Bureau/
 3. Move the `pfQuest-tbc` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
 
-Slim packages (single language): [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS-tbc.zip) · [German](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-deDE-tbc.zip) · [French](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-frFR-tbc.zip) · [Spanish](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-esES-tbc.zip) · [Korean](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-koKR-tbc.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN-tbc.zip) · [Russian](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-ruRU-tbc.zip)
+Slim packages: [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS-tbc.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN-tbc.zip)
 
 ### World of Warcraft: Wrath of the Lich King
 
@@ -50,11 +50,11 @@ Slim packages (single language): [English](https://github.com/The-Kludge-Bureau/
 3. Move the `pfQuest-wotlk` folder into `Wow-Directory\Interface\AddOns`
 4. Restart WoW
 
-Slim packages (single language): [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS-wotlk.zip) · [German](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-deDE-wotlk.zip) · [French](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-frFR-wotlk.zip) · [Spanish](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-esES-wotlk.zip) · [Korean](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-koKR-wotlk.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN-wotlk.zip) · [Russian](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-ruRU-wotlk.zip)
+Slim packages: [English](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-enUS-wotlk.zip) · [Chinese](https://github.com/The-Kludge-Bureau/pfQuest/releases/latest/download/pfQuest-zhCN-wotlk.zip)
 
 ### Development Version
 
-The development version includes databases for all languages and all client expansions in a single folder. It will work in both Vanilla and TBC mode depending on the folder name. Due to the amount of included data, expect higher RAM and disk usage and slightly longer load times compared to the release packages.
+The development version includes the English and Chinese databases for all client expansions in a single folder. It will work in both Vanilla and TBC mode depending on the folder name. Due to the amount of included data, expect higher RAM and disk usage and slightly longer load times compared to the release packages.
 
 - Clone via Git: [`https://github.com/The-Kludge-Bureau/pfQuest.git`](https://github.com/The-Kludge-Bureau/pfQuest.git)
 - Download as zip: **[master.zip](https://github.com/The-Kludge-Bureau/pfQuest/archive/master.zip)**

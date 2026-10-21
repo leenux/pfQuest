@@ -2,12 +2,12 @@
 ## Title: |cff33ffccpf|cffffffffQuest
 ## Author: Shagu, txtsd, Rivi
 ## Notes: A Questhelper and Database
-## Notes-ruRU: Облегченный помощник заданий и база данных
+## Notes-zhCN: 轻量任务助手与数据库
 ## Version: 8.0.51
 ## OptionalDeps: pfUI
 ## SavedVariables: pfQuest_questcache, pfQuest_global
 ## SavedVariablesPerCharacter: pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server, pfQuest_track
 init\data.xml
 init\enUS.xml
-init\ruRU.xml
+init\zhCN.xml
 init\addon.xml
